@@ -1,0 +1,59 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@4.1.0
+
+jobs:
+  test:
+    docker:
+      - image: cimg/node:18.20-browsers
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run: 
+          name: Run tests
+          command: npm run test:headless
+      - store_test_results:
+          path: test-results
+
+  build-deploy:
+    executor: node/default
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Build
+          command: npm run build:prod
+      - run:
+          name: Install AWS CLI
+          command: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            rm -rf awscliv2.zip aws
+      - run:
+          name: Upload to S3
+          command: |
+            DIST_OUTPUT_DIR=$(find dist -maxdepth 2 -type d | awk 'NR==3')
+            aws s3 sync $DIST_OUTPUT_DIR s3://${AWS_S3_BUCKET_NAME}/ --delete
+            
+
+workflows:
+  build_test_deploy:
+    jobs:
+      - test:
+          filters:
+            branches:
+              ignore:
+                - master
+                - develop
+                - feature/*
+      - build-deploy:
+          requires:
+            - test
+          filters:
+            branches:
+              only:
+                - master
